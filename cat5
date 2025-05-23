@@ -1,0 +1,164 @@
+.data
+prompt: .asciiz "Enter the value of n: "
+result_msg: .asciiz "The nth Catalan number is: "
+new_line: .asciiz "\n"
+
+.text
+main:
+    # Print prompt message
+    li $v0, 4
+    la $a0, prompt
+    syscall
+
+    # Read integer input (n)
+    li $v0, 5
+    syscall
+    move $a0, $v0          # Save n in $a0
+
+    # Initialize memoization array
+    move $t0, $a0          # Save n in $t0 for later use
+    addi $t1, $t0, 1       # $t1 = n + 1
+    sll $t1, $t1, 3        # $t1 = 8 * (n + 1) (for 8 bytes per entry)
+    li $v0, 9              # Syscall for sbrk (memory allocation)
+    move $a0, $t1
+    syscall
+    move $s0, $v0          # $s0 = base address of memo array
+
+    # Initialize memo array: C[0] = 1
+    li $t2, 1
+    sw $t2, 0($s0)         # C[0] = 1
+
+    # Initialize memo array entries to 0 (for C[1] to C[n])
+    li $t2, 1              # Start from index 1
+    li $t3, 0              # $t3 = index for outer loop
+    addi $t4, $s0, 8       # $t4 = base address + 8 (start of C[1])
+
+init_loop:
+    bge $t2, $t0, compute_catalan
+    sw $zero, 0($t4)       # C[i] = 0
+    addi $t2, $t2, 1       # i++
+    addi $t4, $t4, 8       # Move to next location (8 bytes)
+    j init_loop
+
+compute_catalan:
+    # Compute Catalan numbers using tabulation
+    li $t2, 1              # Start i = 1
+    addi $t3, $t2, 0       # $t3 = i
+
+outer_loop:
+    bgt $t3, $a0, print_result # If i > n, finish
+    li $t4, 0              # $t4 = result (C[i])
+    move $t5, $t3          # $t5 = i
+
+inner_loop:
+    bge $t5, $t3, store_result # If j >= i, finish
+    # Compute C[j] * C[i - j - 1]
+    move $a0, $t5          # $a0 = j
+    move $a1, $s0          # $a1 = base address of memo
+    jal catalan            # Call catalan(j)
+    move $t6, $v0          # Save C[j] in $t6
+
+    sub $t7, $t3, $t5      # Compute (i - j - 1)
+    sub $t7, $t7, 1
+    move $a0, $t7          # $a0 = i - j - 1
+    move $a1, $s0          # $a1 = base address of memo
+    jal catalan            # Call catalan(i - j - 1)
+    mul $t6, $t6, $v0      # C[j] * C[i - j - 1]
+    add $t4, $t4, $t6      # Add to result
+
+    addi $t5, $t5, 1       # j++
+    j inner_loop
+
+store_result:
+    # Store result in memo[i]
+    sll $t5, $t3, 3        # $t5 = i * 8 (address offset)
+    add $t5, $t5, $s0      # $t5 = base address + offset
+    sw $t4, 0($t5)         # Store result in memo array
+
+    addi $t3, $t3, 1       # i++
+    j outer_loop
+
+print_result:
+    # Print result message
+    li $v0, 4
+    la $a0, result_msg
+    syscall
+
+    # Print result
+    li $t2, 0
+    sll $t2, $a0, 3        # $t2 = n * 8 (address offset)
+    add $t2, $t2, $s0      # $t2 = base address + offset
+    lw $a0, 0($t2)         # Load C[n]
+    li $v0, 1
+    syscall
+
+    # Print new line
+    li $v0, 4
+    la $a0, new_line
+    syscall
+
+    # Exit program
+    li $v0, 10
+    syscall
+
+# Subroutine to compute nth Catalan number
+catalan:
+    # Save registers
+    addi $sp, $sp, -16     # Allocate space for 4 registers
+    sw $ra, 12($sp)        # Save return address
+    sw $s0, 8($sp)         # Save $s0
+    sw $s1, 4($sp)         # Save $s1
+    sw $s2, 0($sp)         # Save $s2
+
+    # Base case: if n <= 1, return 1
+    blez $a0, base_case
+
+    # Check if result is already memoized
+    sll $t0, $a0, 3        # $t0 = n * 8 (address offset)
+    add $t0, $t0, $a1      # $t0 = base address + offset
+    lw $v0, 0($t0)         # Load memo[n]
+    bne $v0, -1, return_result # If memo[n] != -1, return memo[n]
+
+    # Initialize result = 0
+    li $t0, 0              # $t0 = result
+    li $t1, 0              # $t1 = i (loop index)
+
+loop:
+    bge $t1, $a0, done_loop # If i >= n, finish loop
+
+    # Compute catalan(i)
+    move $a0, $t1          # Set argument n = i
+    move $a1, $s0          # Set base address of memo
+    jal catalan            # Call catalan(i)
+    move $s1, $v0          # Save result in $s1
+
+    # Compute catalan(n - i - 1)
+    sub $a2, $a0, $t1      # Compute (n - i - 1)
+    sub $a2, $a2, 1
+    move $a0, $a2          # Set argument n = (n - i - 1)
+    move $a1, $s0          # Set base address of memo
+    jal catalan            # Call catalan(n - i - 1)
+    mul $s1, $s1, $v0      # Multiply catalan(i) * catalan(n - i - 1)
+    add $t0, $t0, $s1      # Add to result
+
+    # Increment index and repeat loop
+    addi $t1, $t1, 1       # i++
+    j loop                 # Repeat loop
+
+done_loop:
+    # Store result in memo[n]
+    sw $t0, 0($t0)         # Save result in memo array
+    lw $ra, 12($sp)        # Restore return address
+    lw $s0, 8($sp)         # Restore $s0
+    lw $s1, 4($sp)         # Restore $s1
+    lw $s2, 0($sp)         # Restore $s2
+    addi $sp, $sp, 16      # Free stack space
+    move $v0, $t0          # Return result
+    jr $ra                 # Return from function
+
+base_case:
+    li $v0, 1              # Return 1
+    jr $ra                 # Return from function
+
+return_result:
+    jr $ra                 # Return memo[n]

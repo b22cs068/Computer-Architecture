@@ -1,0 +1,91 @@
+.data
+prompt: .asciiz "The first 10 Catalan numbers are: "
+new_line: .asciiz "\n"
+
+.text
+main:
+    # Print prompt
+    li $v0, 4
+    la $a0, prompt
+    syscall
+
+    # Initialize loop variables
+    li $t0, 0            # $t0 = i, loop index
+
+print_loop:
+    bge $t0, 10, exit    # If i >= 10, exit loop
+
+    # Call catalan(i)
+    move $a0, $t0        # Set argument n = i
+    jal catalan          # Call catalan function
+    move $a1, $v0        # Save result in $a1
+
+    # Print result
+    li $v0, 1            # Syscall for print integer
+    move $a0, $a1        # Print the Catalan number
+    syscall
+
+    # Print space
+    li $v0, 11           # Syscall for print character
+    li $a0, 32           # ASCII code for space
+    syscall
+
+    # Increment index and repeat loop
+    addi $t0, $t0, 1     # i++
+    j print_loop         # Repeat loop
+
+exit:
+    # Print new line
+    li $v0, 4
+    la $a0, new_line
+    syscall
+
+    # Exit program
+    li $v0, 10
+    syscall
+
+# Recursive function to compute nth Catalan number
+catalan:
+    # Base case: if n <= 1, return 1
+    blez $a0, base_case
+
+    # Compute Catalan number using recursive calls
+    li $t0, 0            # Initialize result = 0
+    li $t1, 0            # Initialize loop index i
+
+    # Allocate stack space for storing intermediate results
+    addi $sp, $sp, -8    # Make space for 2 variables on stack
+    sw $ra, 0($sp)       # Save return address
+    sw $s0, 4($sp)       # Save $s0
+
+loop:
+    bge $t1, $a0, done_loop # If i >= n, finish loop
+
+    # Compute catalan(i)
+    move $a0, $t1        # Set argument n = i
+    jal catalan          # Call catalan(i)
+    move $t2, $v0        # Save result in $t2
+
+    # Compute catalan(n - i - 1)
+    move $a0, $a0        # Set argument n = original n
+    sub $a0, $a0, $t1    # Compute (n - i - 1)
+    sub $a0, $a0, 1
+    jal catalan          # Call catalan(n - i - 1)
+    mul $t2, $t2, $v0    # Multiply catalan(i) * catalan(n - i - 1)
+    add $t0, $t0, $t2    # Add to result
+
+    # Increment index and repeat loop
+    addi $t1, $t1, 1     # i++
+    j loop               # Repeat loop
+
+done_loop:
+    # Restore stack and return
+    lw $ra, 0($sp)       # Restore return address
+    lw $s0, 4($sp)       # Restore $s0
+    addi $sp, $sp, 8     # Free stack space
+    move $v0, $t0        # Return result
+    jr $ra               # Return from function
+
+base_case:
+    li $v0, 1            # Return 1
+    jr $ra               # Return from function

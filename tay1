@@ -1,0 +1,98 @@
+.data
+prompt_x: .asciiz "Enter the value of x: "
+prompt_n: .asciiz "Enter the number of terms: "
+result_msg: .asciiz "The approximation of e^x is: "
+new_line: .asciiz "\n"
+factorial_init: .word 1  # Initial factorial value (1)
+one_float: .float 1.0   # Floating-point constant 1.0
+zero_float: .float 0.0  # Floating-point constant 0.0
+
+.text
+main:
+    # Print prompt for x
+    li $v0, 4
+    la $a0, prompt_x
+    syscall
+
+    # Read floating-point input for x
+    li $v0, 6
+    syscall
+    mov.s $f0, $f0       # Save x in $f0
+
+    # Print prompt for n
+    li $v0, 4
+    la $a0, prompt_n
+    syscall
+
+    # Read integer input for n
+    li $v0, 5
+    syscall
+    move $t0, $v0        # Save n in $t0
+
+    # Initialize variables for Taylor series computation
+    li $t1, 0            # k = 0
+    li $t2, 1            # factorial = 1 (for k = 0)
+    l.s $f2, one_float   # sum = 1.0 (C_0 term)
+
+    # Main loop to compute the Taylor series
+compute_loop:
+    bge $t1, $t0, print_result # If k >= n, finish
+
+    # Compute the k-th term of the series
+    move $a0, $t1        # Pass k to subroutine
+    mov.s $f4, $f0       # Pass x to subroutine
+    jal compute_term     # Compute x^k / k!
+    
+    # Add the term to the running total
+    add.s $f2, $f2, $f0  # sum += term
+    
+    # Increment k and update factorial
+    addi $t1, $t1, 1
+    mul $t2, $t2, $t1    # Update factorial (factorial = factorial * k)
+
+    # Convert integer factorial to floating-point
+    mtc1 $t2, $f8        # Move factorial into $f8
+    cvt.s.w $f8, $f8     # Convert factorial to float
+    div.s $f8, $f8, $f8  # $f8 = factorial as float
+
+    j compute_loop
+
+print_result:
+    # Print result message
+    li $v0, 4
+    la $a0, result_msg
+    syscall
+
+    # Print result (sum of series)
+    li $v0, 2
+    mov.s $f12, $f2
+    syscall
+
+    # Print new line
+    li $v0, 4
+    la $a0, new_line
+    syscall
+
+    # Exit program
+    li $v0, 10
+    syscall
+
+# Subroutine to compute the k-th term of the series: x^k / k!
+compute_term:
+    # Calculate x^k
+    li $t1, 0            # exponent = 0
+    l.s $f6, one_float   # term = 1.0 (x^0 / 0!)
+
+power_loop:
+    bge $t1, $a0, done_power_loop # If exponent >= k, finish
+    mul.s $f6, $f6, $f4  # term *= x
+    addi $t1, $t1, 1
+    j power_loop
+
+done_power_loop:
+    # Divide by k! (factorial in $f2)
+    mtc1 $t2, $f8        # Move factorial into $f8
+    cvt.s.w $f8, $f8     # Convert factorial to float
+    div.s $f0, $f6, $f8  # term = x^k / k!
+    
+    jr $ra               # Return from subroutine

@@ -1,0 +1,95 @@
+.data
+    prompt_x:    .asciiz "Enter the value of x (floating point): "
+    prompt_n:    .asciiz "Enter the number of terms (integer): "
+    result_msg:  .asciiz "Approximation of e^x: "
+    
+.text
+    .globl main
+    
+main:
+    # Prompt user for x (floating point)
+    li $v0, 4                      # Print string syscall
+    la $a0, prompt_x
+    syscall
+
+    li $v0, 6                      # Read float syscall
+    syscall
+    mov.s $f12, $f0                # Store x in $f12 (x)
+    
+    # Prompt user for n (integer)
+    li $v0, 4                      # Print string syscall
+    la $a0, prompt_n
+    syscall
+
+    li $v0, 5                      # Read integer syscall
+    syscall
+    move $t0, $v0                  # Store n in $t0
+    
+    # Initialize sum = 1.0 (first term of series, which is always 1)
+    li $t1, 1                      # Initialize k = 1
+    li $t2, 1                      # Load immediate integer 1
+    mtc1 $t2, $f2                  # Move integer to floating-point register $f2 (sum = 1.0)
+    cvt.s.w $f2, $f2               # Convert to float
+    
+loop:
+    ble $t1, $t0, calc_term        # If k <= n, calculate next term
+    j output                       # Else, jump to output
+    
+calc_term:
+    move $a0, $t1                  # Pass k to subroutine
+    mov.s $f12, $f12               # Pass x to subroutine
+    jal compute_term               # Call subroutine to compute term
+    
+    add.s $f2, $f2, $f0            # sum += term
+    
+    addi $t1, $t1, 1               # Increment k
+    j loop
+    
+output:
+    # Print result
+    li $v0, 4                      # Print string syscall
+    la $a0, result_msg
+    syscall
+
+    li $v0, 2                      # Print float syscall
+    mov.s $f12, $f2                # Move sum to $f12 for printing
+    syscall
+    
+    li $v0, 10                     # Exit syscall
+    syscall
+
+# Subroutine to compute the kth term: (x^k) / k!
+compute_term:
+    move $t2, $a0                  # k in $t2 (k)
+    
+    # Initialize factorial and power
+    li $t3, 1                      # Load immediate integer 1 for factorial
+    mtc1 $t3, $f4                  # Move 1 to floating-point register (factorial = 1.0)
+    cvt.s.w $f4, $f4               # Convert to float
+    
+    mtc1 $t3, $f6                  # Move 1 to floating-point register (power_of_x = 1.0)
+    cvt.s.w $f6, $f6               # Convert to float
+    
+    # Calculate power_of_x = x^k
+    move $t3, $t2                  # Copy k into $t3
+pow_loop:
+    beqz $t3, fact_loop            # If k == 0, skip power calculation
+    mul.s $f6, $f6, $f12           # power_of_x *= x
+    subi $t3, $t3, 1               # Decrement k
+    j pow_loop
+
+# Calculate factorial = k!
+fact_loop:
+    li $t4, 1                      # Initialize loop variable for factorial
+    move $t3, $t2                  # Set loop variable to k
+fact_calc:
+    beqz $t3, done                 # If k == 0, skip factorial
+    mtc1 $t3, $f8                  # Move k into floating-point register
+    cvt.s.w $f8, $f8               # Convert to float
+    mul.s $f4, $f4, $f8            # factorial *= k
+    subi $t3, $t3, 1               # Decrement k
+    j fact_calc
+
+done:
+    div.s $f0, $f6, $f4            # term = power_of_x / factorial
+    jr $ra                         # Return from subroutine

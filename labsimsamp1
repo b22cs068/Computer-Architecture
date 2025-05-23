@@ -1,0 +1,300 @@
+# Task 1: MIPS Assembly to Binary Conversion
+
+# Define the register mapping
+register_map = {
+    "$zero": "00000", "$t0": "01000", "$t1": "01001", "$t2": "01010", "$t3": "01011",
+    "$t4": "01100", "$t5": "01101", "$t6": "01110", "$t7": "01111", "$t8": "11000", "$t9": "11001",
+    "$s0": "10000", "$s1": "10001", "$s2": "10010", "$s3": "10011", "$s4": "10100", "$s5": "10101",
+    "$s6": "10110", "$s7": "10111", "$v0": "00010", "$v1": "00011",
+    "$a0": "00100", "$a1": "00101", "$a2": "00110", "$a3": "00111",
+    "$k0": "11010", "$k1": "11011", "$gp": "11100", "$sp": "11101", "$fp": "11110", "$ra": "11111"
+}
+
+# Define the function and opcode mappings
+funct_map = {
+    "add": "100000", "sub": "100010", "and": "100100", "or": "100101", "slt": "101010"
+}
+
+opcode_map = {
+    "lw": "100011", "sw": "101011", "addi": "001000", "beq": "000100", "j": "000010"
+}
+
+# Function to convert a number to a binary string with a specific number of bits
+def to_binary(number, bit_length):
+    """Convert a number to a binary string with a given bit length."""
+    if number >= 0:
+        binary_str = bin(number)[2:].zfill(bit_length)
+    else:
+        binary_str = bin((1 << bit_length) + number)[2:].zfill(bit_length)
+    return binary_str[-bit_length:]
+
+# Parsing I-type instructions
+def parse_i_type(operation, rt, rs, immediate):
+    """Parse I-type instructions (lw, sw, addi, beq) and generate 32-bit binary code."""
+    opcode = opcode_map[operation].zfill(6)
+    rs_bin = register_map[rs].zfill(5)
+    rt_bin = register_map[rt].zfill(5)
+
+    imm_bin = to_binary(immediate, 16)
+    return (opcode + rs_bin + rt_bin + imm_bin).zfill(32)
+
+# Parsing R-type instructions
+def parse_r_type(operation, rd, rs, rt):
+    """Parse R-type instructions and return 32-bit binary instruction."""
+    opcode = "000000"
+    rs_bin = register_map[rs].zfill(5)
+    rt_bin = register_map[rt].zfill(5)
+    rd_bin = register_map[rd].zfill(5)
+    shamt = "00000"
+    funct = funct_map[operation].zfill(6)
+
+    return (opcode + rs_bin + rt_bin + rd_bin + shamt + funct).zfill(32)
+
+# Parsing J-type instructions
+def parse_j_type(operation, address):
+    """Parse J-type instructions (j)."""
+    opcode = opcode_map[operation]
+    address_bin = to_binary(address, 26)
+    return (opcode + address_bin).zfill(32)
+
+# Memory allocation for .data section
+data_section = {}
+current_data_address = 0x10010000
+
+def allocate_data(label, value):
+    """Allocate memory for a data label and return the address."""
+    global current_data_address
+    try:
+        int_value = int(value)
+    except ValueError:
+        int_value = 0
+    data_section[label] = (current_data_address, int_value)
+    current_data_address += 4
+    return data_section[label][0]
+
+# Compile a single MIPS instruction to binary
+def compile_mips(instruction, instruction_address, label_address_map):
+    """Compile a single MIPS instruction to binary."""
+    parts = instruction.replace(",", "").split()
+    if len(parts) == 0:
+        return None  # Skip empty lines
+
+    operation = parts[0]
+
+    if operation in funct_map:
+        rd, rs, rt = parts[1], parts[2], parts[3]
+        return parse_r_type(operation, rd, rs, rt)
+
+    elif operation in ["lw", "sw", "addi", "beq"]:
+        if operation in ["lw", "sw"]:
+            rt = parts[1]
+            offset_base = parts[2]
+
+            if offset_base in data_section:
+                offset = data_section[offset_base][0] - 0x10010000
+                base = "$zero"
+                return parse_i_type(operation, rt, base, offset)
+
+            try:
+                offset, base = offset_base.split("(")
+                base = base.replace(")", "")
+                offset_value = int(offset)
+                return parse_i_type(operation, rt, base, offset_value)
+            except ValueError:
+                return None
+
+        elif len(parts) == 4:
+            rt = parts[1]
+            rs = parts[2]
+            immediate = parts[3]
+
+            if immediate in label_address_map:
+                immediate_value = (label_address_map[immediate] - (instruction_address + 4)) // 4
+            else:
+                try:
+                    immediate_value = int(immediate)
+                except ValueError:
+                    return None
+
+            return parse_i_type(operation, rt, rs, immediate_value)
+
+    elif operation == "j":
+        if len(parts) != 2:
+            return None
+        address = parts[1]
+
+        if address in label_address_map:
+            address_value = label_address_map[address] // 4
+        else:
+            try:
+                address_value = int(address)
+            except ValueError:
+                return None
+
+        return parse_j_type(operation, address_value)
+
+    return None
+
+def read_assembly_file(input_file):
+    """Read the assembly file, compile each instruction, and return a list of binary instructions."""
+    binary_instructions = []
+    in_data_section = False
+    instruction_address = 0
+    label_address_map = {}
+
+    with open(input_file, 'r') as file:
+        for line in file:
+            line = line.strip()
+
+            if not line or line.startswith("#"):
+                continue
+
+            if line == ".data":
+                in_data_section = True
+                continue
+            elif line == ".text":
+                in_data_section = False
+                continue
+
+            if in_data_section:
+                if ":" in line:
+                    label, value = line.split(":")
+                    allocate_data(label.strip(), value.strip())
+                continue
+            elif line and not line.startswith('.'):
+                if ":" in line:
+                    label, instruction = line.split(":")
+                    label_address_map[label.strip()] = instruction_address
+                    instruction_address += 4
+                else:
+                    instruction_address += 4
+
+    instruction_address = 0
+    with open(input_file, 'r') as file:
+        for line in file:
+            line = line.strip()
+
+            if not line or line.startswith("#"):
+                continue
+
+            if line == ".data":
+                in_data_section = True
+                continue
+            elif line == ".text":
+                in_data_section = False
+                continue
+
+            if not in_data_section and not line.startswith('.'):
+                if ":" in line:
+                    label, instruction = line.split(":")
+                    compiled_instruction = compile_mips(instruction.strip(), instruction_address, label_address_map)
+                else:
+                    compiled_instruction = compile_mips(line, instruction_address, label_address_map)
+
+                if compiled_instruction:
+                    binary_instructions.append(compiled_instruction)
+                    instruction_address += 4
+
+    return binary_instructions
+
+
+# Task 2: MIPS Execution Simulation
+
+class MIPSProcessor:
+    def __init__(self, binary_instructions, data_section):
+        self.registers = [0] * 32  # Initialize registers
+        self.registers[0] = 0  # $zero is always 0
+        self.memory = {addr: value for addr, value in data_section.values()}  # Initialize memory with data
+        self.PC = 0  # Program Counter
+        self.instruction_memory = binary_instructions  # Load binary instructions
+        self.opcode_map_binary = {v: k for k, v in opcode_map.items()}  # Reverse mapping for opcodes
+        self.funct_map_binary = {v: k for k, v in funct_map.items()}  # Reverse mapping for functions
+        self.binary_register_map = {v: k for k, v in register_map.items()}  # Reverse mapping for registers
+        self.register_name_to_index = {name: idx for idx, name in enumerate(register_map.keys())}  # Register index mapping
+
+    def run(self):
+        total_instructions = len(self.instruction_memory)
+        while self.PC < total_instructions * 4:
+            instruction_index = self.PC // 4
+            binary_instruction = self.instruction_memory[instruction_index]
+            print(f"\nExecuting instruction at PC = {self.PC}: {binary_instruction}")
+
+            # Decode the instruction
+            opcode = binary_instruction[0:6]
+            if opcode in self.opcode_map_binary.values():
+                if opcode == "000000":  # R-type instruction
+                    rs = self.binary_register_map[binary_instruction[6:11]]
+                    rt = self.binary_register_map[binary_instruction[11:16]]
+                    rd = self.binary_register_map[binary_instruction[16:21]]
+                    shamt = int(binary_instruction[21:26], 2)
+                    funct = binary_instruction[26:32]
+                    self.execute_r_type(funct, rs, rt, rd, shamt)
+                else:  # I-type or J-type instruction
+                    if opcode in ["100011", "101011", "001000", "000100"]:  # lw, sw, addi, beq
+                        rs = self.binary_register_map[binary_instruction[6:11]]
+                        rt = self.binary_register_map[binary_instruction[11:16]]
+                        immediate = int(binary_instruction[16:], 2)
+                        self.execute_i_type(opcode, rt, rs, immediate)
+                    elif opcode == "000010":  # j instruction
+                        address = int(binary_instruction[6:], 2)
+                        self.jump(address)
+            else:
+                print(f"Unknown instruction opcode: {opcode}")
+                break  # Exit on unknown opcode
+
+            self.PC += 4  # Increment PC by 4
+
+    def execute_r_type(self, funct, rs, rt, rd, shamt):
+        if funct == "100000":  # add
+            self.registers[rd] = self.registers[rs] + self.registers[rt]
+        elif funct == "100010":  # sub
+            self.registers[rd] = self.registers[rs] - self.registers[rt]
+        elif funct == "100100":  # and
+            self.registers[rd] = self.registers[rs] & self.registers[rt]
+        elif funct == "100101":  # or
+            self.registers[rd] = self.registers[rs] | self.registers[rt]
+        elif funct == "101010":  # slt
+            self.registers[rd] = 1 if self.registers[rs] < self.registers[rt] else 0
+        else:
+            print(f"Unknown R-type function code: {funct}")
+
+    def execute_i_type(self, opcode, rt, rs, immediate):
+        if opcode == "100011":  # lw
+            address = self.registers[rs] + immediate
+            self.registers[rt] = self.memory.get(address, 0)  # Load word from memory
+        elif opcode == "101011":  # sw
+            address = self.registers[rs] + immediate
+            self.memory[address] = self.registers[rt]  # Store word to memory
+        elif opcode == "001000":  # addi
+            self.registers[rt] = self.registers[rs] + immediate
+        elif opcode == "000100":  # beq
+            if self.registers[rs] == self.registers[rt]:
+                self.PC += immediate * 4  # Branch if equal
+        else:
+            print(f"Unknown I-type opcode: {opcode}")
+
+    def jump(self, address):
+        self.PC = (address << 2)  # Jump to the specified address
+
+# Example usage:
+# binary_instructions = read_assembly_file('your_mips_file.asm')
+# processor = MIPSProcessor(binary_instructions, data_section)
+# processor.run()
+# Main execution
+if __name__ == "__main__":
+    input_file = "test_code_1_mips_sim.asm"  # Replace with your MIPS assembly file
+    binary_instructions = read_assembly_file(input_file)
+
+    # Print the binary instructions
+    print("Binary Instructions:")
+    for idx, instruction in enumerate(binary_instructions):
+        print(f"{idx * 4}: {instruction}")
+    output_file = "output.bin"  # Replace with the desired output file name
+    with open(output_file, 'w') as file:
+        for instruction in binary_instructions:
+            file.write(instruction + '\n')
+    print(f"\nBinary instructions have been written to {output_file}")
+
+    # Initialize and run the MIPS processor simulation
+    processor = MIPSProcessor(binary_instructions, data_section)
+    processor.run()

@@ -1,0 +1,112 @@
+.data
+prompt_x: .asciiz "Enter the value of x: "
+prompt_n: .asciiz "Enter the number of terms: "
+result_msg: .asciiz "Approximation of e^x: "
+newline: .asciiz "\n"
+zero_float: .float 0.0
+one_float: .float 1.0
+
+.text
+.globl main
+
+main:
+    # Print prompt for x
+    li $v0, 4
+    la $a0, prompt_x
+    syscall
+
+    # Read floating-point number x
+    li $v0, 6
+    syscall
+    mov.s $f12, $f0  # Store x in $f12
+
+    # Print prompt for n
+    li $v0, 4
+    la $a0, prompt_n
+    syscall
+
+    # Read integer n
+    li $v0, 5
+    syscall
+    move $t0, $v0  # Store n in $t0
+
+    # Initialize variables
+    la $t1, zero_float
+    l.s $f0, ($t1)  # Load 0.0 into $f0
+    mov.s $f4, $f0   # sum = 0.0
+
+    li $t2, 1        # factorial = 1
+    li $t3, 0        # i = 0
+
+calculate_terms:
+    beq $t3, $t0, done  # If i == n, exit loop
+
+    # Compute the term for i
+    move $a0, $t3
+    move $a1, $t2
+    jal compute_term    # Call compute_term(i, factorial)
+    mov.s $f6, $f0      # Store term in $f6
+
+    # Print term value for debugging
+    li $v0, 2
+    mov.s $f12, $f6
+    syscall
+    li $v0, 4
+    la $a0, newline
+    syscall
+
+    # Add the term to sum
+    add.s $f4, $f4, $f6
+    mov.s $f0, $f4
+
+    # Update factorial for next term
+    mul $t2, $t2, $t3
+    addi $t3, $t3, 1
+
+    j calculate_terms
+
+done:
+    # Print result
+    li $v0, 4
+    la $a0, result_msg
+    syscall
+
+    li $v0, 2
+    mov.s $f12, $f4
+    syscall
+
+    # Exit program
+    li $v0, 10
+    syscall
+
+### Subroutine: Compute the kth Term of the Series
+
+compute_term:
+    # Arguments: $a0 = k, $a1 = factorial
+    # Return: $f0 = x^k / k!
+
+    # Load x into $f2
+    mov.s $f2, $f12
+
+    # Load 1.0 into $f4
+    la $t5, one_float
+    l.s $f4, ($t5)
+
+    # Calculate x^k
+    move $t6, $a0
+
+power_loop:
+    beqz $t6, power_done
+    mul.s $f2, $f2, $f4
+    subi $t6, $t6, 1
+    j power_loop
+
+power_done:
+    # Divide x^k by k!
+    mtc1 $a1, $f8
+    cvt.s.w $f8, $f8   # Convert int to float
+    div.s $f0, $f2, $f8
+
+    # Return
+    jr $ra
+    nop
